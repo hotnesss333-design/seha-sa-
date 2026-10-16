@@ -153,67 +153,26 @@
     }
   }
 
-  const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_records';
-  const CLOUD_DB_BACKUP_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_backup';
-
-  async function pushToCloudEndpoints(leaves) {
-    if (!Array.isArray(leaves)) return;
-    const payload = JSON.stringify(leaves);
-    const urls = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-    for (const u of urls) {
-      try {
-        fetch(u, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload
-        }).catch(() => {});
-      } catch (e) {}
-    }
-  }
-
-  // Fetch leaves from central server database with cloud fallback
+  // Fetch leaves from the database-backed server API, with local storage
+  // only as an offline fallback (no external cloud endpoints anymore).
   async function fetchLeaves() {
-    let loaded = false;
     try {
       const res = await fetch('/api/sick-leaves');
       if (res.ok) {
         const json = await res.json();
-        if (Array.isArray(json.data) && json.data.length > 0) {
+        if (Array.isArray(json.data)) {
           leavesData = json.data;
           setLocalLeaves(leavesData);
           renderDashboard();
-          loaded = true;
           return;
         }
       }
     } catch (err) {
-      console.warn('Error fetching leaves from server, falling back to cloud:', err);
+      console.warn('Error fetching leaves from server, falling back to local storage:', err);
     }
 
-    // Direct cloud fetch fallback across networks/devices
-    if (!loaded) {
-      const endpoints = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-      for (const u of endpoints) {
-        try {
-          const cRes = await fetch(u, { cache: 'no-cache' });
-          if (cRes.ok) {
-            const cData = await cRes.json();
-            if (Array.isArray(cData) && cData.length > 0) {
-              leavesData = cData;
-              setLocalLeaves(leavesData);
-              renderDashboard();
-              loaded = true;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (!loaded) {
-      leavesData = getLocalLeaves();
-      renderDashboard();
-    }
+    leavesData = getLocalLeaves();
+    renderDashboard();
   }
 
   // Save or update leave or companion IMMEDIATELY from first click ("من أول مرة")
@@ -243,10 +202,7 @@
     // 3. Save to local storage immediately
     setLocalLeaves(leavesData);
 
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update active tab to match what was saved so user sees it right away
+    // 4. Update active tab to match what was saved so user sees it right away
     if (isComp) {
       currentTab = 'companions';
     } else {
@@ -271,7 +227,7 @@
       const method = isEdit ? 'PUT' : 'POST';
       await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Seha-Admin': isLoggedIn() ? '1' : '0' },
         body: JSON.stringify(leaveObj)
       });
     } catch (e) {
@@ -300,10 +256,7 @@
     // 3. Save to local storage immediately
     setLocalLeaves(leavesData);
 
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update UI & close modal immediately
+    // 4. Update UI & close modal immediately
     closeDeleteModal();
     renderDashboard();
     showToast(isComp ? 'تم حذف تقرير مرافق المريض من قاعدة البيانات بنجاح' : 'تم حذف التقرير من قاعدة البيانات بنجاح');
@@ -311,7 +264,8 @@
     // 6. Send to server in background
     try {
       await fetch(`/api/sick-leaves/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'X-Seha-Admin': isLoggedIn() ? '1' : '0' }
       });
     } catch (e) {
       console.warn("Background server delete warning:", e);
