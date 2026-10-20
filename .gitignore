@@ -1,4 +1,8 @@
 # Gradle files
+node_modules/
+dist/
+.netlify/
+
 .gradle/
 build/
 
