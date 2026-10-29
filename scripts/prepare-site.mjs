@@ -4,7 +4,7 @@ import { access, cp, mkdir, rm } from 'node:fs/promises';
 const root = new URL('../', import.meta.url);
 const output = new URL('dist/', root);
 const publicFiles = [
-  'index.html', 'css', 'js', 'images', 'assets', 'img',
+  'index.html', 'css', 'js', 'images', 'assets', 'img', 'robots.txt',
   'googledbcfb73b6979be60.html',
 ];
 

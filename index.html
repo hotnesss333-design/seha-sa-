@@ -564,6 +564,34 @@
     <div id="root"></div>
 
     <script>
+      // Privacy guard for admin pages: pages behind login (dashboard / account screens)
+      // are explicitly marked noindex so search engines never list or analyse them.
+      (function() {
+        'use strict';
+        var meta = null;
+        function refreshNoindex() {
+          var hash = (window.location.hash || '').toLowerCase();
+          var isAdminArea = hash.indexOf('#/dashboard') === 0 ||
+            hash.indexOf('#/account/login') === 0 ||
+            hash.indexOf('#/account/signup') === 0 ||
+            hash.indexOf('#/account/reset') === 0;
+          if (isAdminArea) {
+            if (!meta) {
+              meta = document.createElement('meta');
+              meta.setAttribute('name', 'robots');
+              document.head.appendChild(meta);
+            }
+            meta.setAttribute('content', 'noindex, nofollow');
+          } else if (meta) {
+            meta.setAttribute('content', 'index, follow');
+          }
+        }
+        window.addEventListener('hashchange', refreshNoindex);
+        refreshNoindex();
+      })();
+    </script>
+
+    <script>
       // Load heavy third-party widget after page is fully idle
       window.addEventListener('load', function() {
         setTimeout(function() {
