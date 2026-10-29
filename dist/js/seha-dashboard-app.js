@@ -136,49 +136,60 @@
     return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1);
   }
 
-  // Check login state
+  // Check login state — the local flag alone is never trusted; the server session is verified
   function isLoggedIn() {
     return localStorage.getItem('seha_logged_in') === 'true';
+  }
+
+  function getStoredToken() {
+    let token = '';
+    try { token = localStorage.getItem('JWTUserToken') || ''; } catch (e) {}
+    if (!token) {
+      const match = document.cookie.match(/(?:^|;\s*)JWTUserToken=([^;]+)/);
+      if (match) token = match[1];
+    }
+    return token;
   }
 
   function setLoggedIn(val) {
     if (val) {
       localStorage.setItem('seha_logged_in', 'true');
-      localStorage.setItem('JWTUserToken', 'seha_token_77889900');
-      document.cookie = "JWTUserToken=seha_token_77889900;path=/;max-age=86400";
+      const token = getStoredToken();
+      if (token) {
+        document.cookie = "JWTUserToken=" + token + ";path=/;max-age=86400;SameSite=Lax";
+      }
     } else {
       localStorage.removeItem('seha_logged_in');
       localStorage.removeItem('JWTUserToken');
-      document.cookie = "JWTUserToken=;path=/;max-age=0";
+      localStorage.removeItem('seha_username');
+      document.cookie = "JWTUserToken=;path=/;max-age=0;SameSite=Lax";
     }
   }
 
-  const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_records';
-  const CLOUD_DB_BACKUP_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_backup';
-
-  async function pushToCloudEndpoints(leaves) {
-    if (!Array.isArray(leaves)) return;
-    const payload = JSON.stringify(leaves);
-    const urls = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-    for (const u of urls) {
-      try {
-        fetch(u, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload
-        }).catch(() => {});
-      } catch (e) {}
+  // Ask the server whether the current session token is really valid
+  async function verifySessionWithServer() {
+    try {
+      const res = await fetch('/api/users/verify', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: getStoredToken() ? { 'Authorization': 'Bearer ' + getStoredToken() } : {}
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      return !!(data && data.errorCode === 0 && data.data && data.data.userName);
+    } catch (e) {
+      return false;
     }
   }
 
-  // Fetch leaves from central server database with cloud fallback
+  // Fetch leaves from the site's own independent database (single source of truth)
   async function fetchLeaves() {
     let loaded = false;
     try {
-      const res = await fetch('/api/sick-leaves');
+      const res = await fetch('/api/sick-leaves', { credentials: 'same-origin', cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
-        if (Array.isArray(json.data) && json.data.length > 0) {
+        if (Array.isArray(json.data)) {
           leavesData = json.data;
           setLocalLeaves(leavesData);
           renderDashboard();
@@ -187,27 +198,7 @@
         }
       }
     } catch (err) {
-      console.warn('Error fetching leaves from server, falling back to cloud:', err);
-    }
-
-    // Direct cloud fetch fallback across networks/devices
-    if (!loaded) {
-      const endpoints = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-      for (const u of endpoints) {
-        try {
-          const cRes = await fetch(u, { cache: 'no-cache' });
-          if (cRes.ok) {
-            const cData = await cRes.json();
-            if (Array.isArray(cData) && cData.length > 0) {
-              leavesData = cData;
-              setLocalLeaves(leavesData);
-              renderDashboard();
-              loaded = true;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
+      console.warn('Error fetching leaves from server:', err);
     }
 
     if (!loaded) {
@@ -243,10 +234,7 @@
     // 3. Save to local storage immediately
     setLocalLeaves(leavesData);
 
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update active tab to match what was saved so user sees it right away
+    // 4. Update active tab to match what was saved so user sees it right away
     if (isComp) {
       currentTab = 'companions';
     } else {
@@ -271,6 +259,7 @@
       const method = isEdit ? 'PUT' : 'POST';
       await fetch(url, {
         method,
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(leaveObj)
       });
@@ -300,18 +289,16 @@
     // 3. Save to local storage immediately
     setLocalLeaves(leavesData);
 
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update UI & close modal immediately
+    // 4. Update UI & close modal immediately
     closeDeleteModal();
     renderDashboard();
     showToast(isComp ? 'تم حذف تقرير مرافق المريض من قاعدة البيانات بنجاح' : 'تم حذف التقرير من قاعدة البيانات بنجاح');
 
-    // 6. Send to server in background
+    // 5. Send to server in background
     try {
       await fetch(`/api/sick-leaves/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'same-origin'
       });
     } catch (e) {
       console.warn("Background server delete warning:", e);
@@ -424,6 +411,16 @@
       window.location.hash = '#/account/login';
       return;
     }
+
+    // Server-side session verification: a forged local flag can never open the dashboard.
+    verifySessionWithServer().then(valid => {
+      if (!valid) {
+        setLoggedIn(false);
+        const c = document.getElementById('seha-admin-dashboard-container');
+        if (c) c.style.display = 'none';
+        window.location.hash = '#/account/login';
+      }
+    });
 
     if (!container) {
       if (!document.body) return;
@@ -830,7 +827,7 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             <span>إدارة الحسابات وكلمة المرور</span>
           </button>
-          <span class="seha-user-badge">المسؤول: ${localStorage.getItem('seha_username') || '77899900'}</span>
+          <span class="seha-user-badge">المسؤول: ${localStorage.getItem('seha_username') || 'المسؤول'}</span>
           <button id="btn-seha-logout" class="seha-btn-logout">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             <span>تسجيل الخروج</span>
@@ -1732,7 +1729,7 @@
       console.error(e);
     }
 
-    const currentUsername = localStorage.getItem("seha_username") || "77899900";
+    const currentUsername = localStorage.getItem("seha_username") || "المسؤول";
 
     modalEl.innerHTML = `
       <style>
@@ -1835,7 +1832,7 @@
                 </div>
                 <div class="seha-field-group">
                   <label class="seha-field-label">كلمة المرور الجديدة</label>
-                  <input type="text" id="inp-cur-new-password" class="seha-input" placeholder="أدخل كلمة المرور الجديدة" required>
+                  <input type="password" id="inp-cur-new-password" class="seha-input" placeholder="أدخل كلمة المرور الجديدة" required autocomplete="new-password">
                 </div>
               </div>
               <button type="submit" class="seha-btn-submit" style="font-size:13px;padding:9px 18px;">
@@ -1862,7 +1859,7 @@
                 </div>
                 <div class="seha-field-group">
                   <label class="seha-field-label">كلمة المرور</label>
-                  <input type="text" id="inp-new-user-password" class="seha-input" placeholder="كلمة المرور للدخول" required>
+                  <input type="password" id="inp-new-user-password" class="seha-input" placeholder="كلمة المرور للدخول" required autocomplete="new-password">
                 </div>
               </div>
               <button type="submit" class="seha-btn-submit" style="background:#0284c7;font-size:13px;padding:9px 18px;">

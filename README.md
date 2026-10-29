@@ -1,10 +1,30 @@
 # seha-sa-
 
-Netlify runs `npm run build` and publishes `dist/`. The preparation script copies
-the HTML, styles, JavaScript, and image assets into a clean output directory and
-fails if required source files are missing. Do not deploy the partial `dist/`
-snapshot without preparing it first.
+منصة «صحة» للخدمات الصحية — موقع ثابت على Netlify مع واجهات API وقاعدة بيانات مستقلة.
 
-API handlers are deployed separately from `netlify/functions/` using the routes
-in `netlify.toml`. Server code, data files, and source archives are not copied
-into the public site.
+## البنية
+
+- الواجهة: ملفات ثابتة (`index.html`، `js/`، `css/`، `assets/`) تُجهَّز إلى `dist/` عبر
+  `npm run build` وتُنشر تلقائياً.
+- واجهات API: دوال Netlify في `netlify/functions/` (المسارات معرّفة في `netlify.toml`):
+  - `users.ts` — تسجيل دخول آمن (تحقق من الخادم، جلسات مشفرة، تحديد معدل المحاولات)،
+    وإدارة الحسابات وتغيير كلمة المرور.
+  - `sick-leaves.ts` — إدارة سجلات الإجازات ومرافقي المرضى (تتطلب جلسة إدارة صالحة).
+  - `inquiry.ts` — الاستعلام العام (يتطلب رقم الهوية + رمز الخدمة معاً).
+  - `external-stub.ts` — نقطة استجابة محلية تمنع أي اتصال بأي موقع خارجي.
+- قاعدة البيانات: Postgres مُدارة مستقلة (Netlify Database) عبر Drizzle ORM.
+  التعريفات في `db/schema.ts`، والتحديثات في `netlify/database/migrations/`
+  وتُطبَّق تلقائياً عند النشر.
+
+## الأمان
+
+راجع [SECURITY.md](SECURITY.md) — يوثّق حماية تسجيل الدخول، ترويسات الأمان،
+وحماية بيانات المرضى، وعدم وجود أي اتصال بأي جهة خارجية.
+
+## التشغيل محلياً
+
+```bash
+npm install
+npm run dev    # Netlify Dev مع محاكاة الدوال وقاعدة البيانات (منفذ 8889)
+npm start      # خادم ثابت فقط للمعاينة
+```
