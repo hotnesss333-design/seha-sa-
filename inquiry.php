@@ -43,7 +43,7 @@ $data = $matched ?: [];
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>تقرير الإجازة المرضية - صحة</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="/assets/fonts/cairo.css" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
     body { background: #f4f7fb; color: #1e293b; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }

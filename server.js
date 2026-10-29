@@ -2,6 +2,7 @@ import express from 'express';
 import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -99,10 +100,7 @@ const normalizeRelationship = (relVal, relName) => {
   };
 };
 
-// High-Availability Multi-Region Cloud & Local Storage Engine
-const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_records';
-const CLOUD_DB_BACKUP_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_backup';
-
+// Local-disk storage engine (fully self-hosted, no external services)
 let memoryLeavesCache = null;
 
 const readLeavesDisk = () => {
@@ -139,68 +137,6 @@ const writeLeavesDisk = (leaves) => {
   }
 };
 
-const syncToCloud = async (leaves) => {
-  if (!Array.isArray(leaves)) return;
-  const payload = JSON.stringify(leaves);
-  const targets = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-  
-  await Promise.allSettled(targets.map(async (url) => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-    } catch (e) {
-      console.warn(`[Cloud Sync] Warning syncing to ${url}:`, e.message);
-    }
-  }));
-};
-
-const fetchFromCloud = async () => {
-  const targets = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-  for (const url of targets) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch(url, { cache: 'no-cache', signal: controller.signal });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data;
-        }
-      }
-    } catch (e) {
-      console.warn(`[Cloud Fetch] Warning fetching from ${url}:`, e.message);
-    }
-  }
-  return null;
-};
-
-const mergeLeavesLists = (primary, secondary) => {
-  const map = new Map();
-  if (Array.isArray(secondary)) {
-    for (const item of secondary) {
-      if (!item) continue;
-      const key = String(item.NormalizedServiceCode || item.id || '').toLowerCase().trim();
-      if (key) map.set(key, item);
-    }
-  }
-  if (Array.isArray(primary)) {
-    for (const item of primary) {
-      if (!item) continue;
-      const key = String(item.NormalizedServiceCode || item.id || '').toLowerCase().trim();
-      if (key) map.set(key, item);
-    }
-  }
-  return Array.from(map.values());
-};
-
 const readLeaves = () => {
   if (memoryLeavesCache !== null) {
     return memoryLeavesCache;
@@ -213,26 +149,14 @@ const readLeaves = () => {
 const writeLeaves = (leaves) => {
   memoryLeavesCache = leaves;
   writeLeavesDisk(leaves);
-  syncToCloud(leaves).catch(() => {});
   return true;
 };
 
-// Warm up and sync on startup
+// Warm up local database on startup
 (async () => {
   try {
-    const local = readLeavesDisk();
-    const cloud = await fetchFromCloud();
-    if (cloud && cloud.length > 0) {
-      const merged = mergeLeavesLists(cloud, local);
-      memoryLeavesCache = merged;
-      writeLeavesDisk(merged);
-    } else if (local && local.length > 0) {
-      memoryLeavesCache = local;
-      await syncToCloud(local);
-    } else {
-      memoryLeavesCache = [];
-    }
-    console.log(`[Database Ready] Loaded ${memoryLeavesCache.length} sick leaves and companion records.`);
+    memoryLeavesCache = readLeavesDisk();
+    console.log(`[DB Ready] Loaded ${memoryLeavesCache.length} sick leaves and companion records.`);
   } catch (err) {
     console.warn('[Database Init] Warning during warm up:', err);
   }
@@ -240,15 +164,7 @@ const writeLeaves = (leaves) => {
 
 // Sick Leaves API Endpoints
 app.get('/api/sick-leaves', async (req, res) => {
-  let leaves = readLeaves();
-  if (!leaves || leaves.length === 0) {
-    const cloud = await fetchFromCloud();
-    if (cloud && cloud.length > 0) {
-      leaves = cloud;
-      memoryLeavesCache = cloud;
-      writeLeavesDisk(cloud);
-    }
-  }
+  const leaves = readLeaves();
   res.json({ success: true, count: leaves.length, data: leaves });
 });
 
@@ -325,7 +241,6 @@ app.post('/api/sick-leaves', async (req, res) => {
   }
 
   writeLeaves(leaves);
-  await syncToCloud(leaves);
   res.status(201).json({ success: true, message: isCompanion ? "تم حفظ مرافق المريض في قاعدة البيانات بنجاح" : "تمت إضافة الإجازة وحفظها في قاعدة البيانات بنجاح", data: newLeave });
 });
 
@@ -395,7 +310,6 @@ app.put('/api/sick-leaves/:id', async (req, res) => {
     };
     leaves.unshift(newLeave);
     writeLeaves(leaves);
-    await syncToCloud(leaves);
     return res.json({ success: true, message: isCompanion ? "تم تحديث مرافق المريض وحفظه في قاعدة البيانات بنجاح" : "تم تحديث الإجازة وحفظها في قاعدة البيانات بنجاح", data: newLeave });
   }
 
@@ -440,7 +354,6 @@ app.put('/api/sick-leaves/:id', async (req, res) => {
   };
 
   writeLeaves(leaves);
-  await syncToCloud(leaves);
   res.json({ success: true, message: finalIsCompanion ? "تم تحديث بيانات المرافق وحفظها في قاعدة البيانات بنجاح" : "تم تحديث الإجازة وحفظها في قاعدة البيانات بنجاح", data: leaves[index] });
 });
 
@@ -453,7 +366,6 @@ app.delete('/api/sick-leaves/:id', async (req, res) => {
   );
 
   writeLeaves(filtered);
-  await syncToCloud(filtered);
   res.json({ success: true, message: "تم حذف التقرير من قاعدة البيانات بنجاح" });
 });
 
@@ -490,7 +402,6 @@ app.post('/api/sick-leaves/sync', async (req, res) => {
   }
 
   writeLeaves(currentLeaves);
-  await syncToCloud(currentLeaves);
   res.json({ success: true, count: currentLeaves.length, data: currentLeaves });
 });
 
@@ -512,25 +423,6 @@ app.get(['/api/sick-leaves/inquiry', '/api/inquiry'], async (req, res) => {
     const codeMatch = String(l.NormalizedServiceCode || '').trim().toLowerCase() === serviceCode.toLowerCase();
     return idMatch && codeMatch;
   });
-
-  // If no match in local cache, query global cloud database instantly to ensure cross-device consistency
-  if (matches.length === 0) {
-    try {
-      const cloud = await fetchFromCloud();
-      if (cloud && Array.isArray(cloud)) {
-        const merged = mergeLeavesLists(cloud, leaves);
-        memoryLeavesCache = merged;
-        writeLeavesDisk(merged);
-        matches = merged.filter(l => {
-          const idMatch = String(l.PatientId || '').trim() === patientId;
-          const codeMatch = String(l.NormalizedServiceCode || '').trim().toLowerCase() === serviceCode.toLowerCase();
-          return idMatch && codeMatch;
-        });
-      }
-    } catch (e) {
-      console.warn('Cloud inquiry fallback warning:', e);
-    }
-  }
 
   // Ensure companion properties are properly populated for React and other clients
   matches = matches.map(m => {
@@ -575,21 +467,6 @@ const handlePhpInquiry = async (req, res) => {
     return String(l.PatientId).trim() === patientId &&
            String(l.NormalizedServiceCode).trim().toUpperCase() === serviceCode.toUpperCase();
   });
-
-  if (!match) {
-    try {
-      const cloud = await fetchFromCloud();
-      if (cloud && Array.isArray(cloud)) {
-        const merged = mergeLeavesLists(cloud, leaves);
-        memoryLeavesCache = merged;
-        writeLeavesDisk(merged);
-        match = merged.find(l => {
-          return String(l.PatientId).trim() === patientId &&
-                 String(l.NormalizedServiceCode).trim().toUpperCase() === serviceCode.toUpperCase();
-        });
-      }
-    } catch (e) {}
-  }
 
   if (match) {
     const compName = String(match.CompanionName || match["Patient Name"] || '').trim();
@@ -742,13 +619,32 @@ app.get(['/slenquiry.app', '/slenquiry', '/inquiries/slenquiry'], (req, res) => 
 
 const USERS_PATH = path.join(__dirname, 'data', 'users.json');
 
+// Password hashing (PBKDF2-SHA512) — plaintext passwords are never stored
+const PBKDF2_ITERATIONS = 210000;
+const hashPassword = (password, salt) =>
+  crypto.pbkdf2Sync(String(password), String(salt), PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
+const newSalt = () => crypto.randomBytes(16).toString('hex');
+const verifyPassword = (password, user) => {
+  if (!user || !user.password_hash || !user.password_salt) return false;
+  const computed = Buffer.from(hashPassword(password, user.password_salt), 'hex');
+  const expected = Buffer.from(user.password_hash, 'hex');
+  return computed.length === expected.length && crypto.timingSafeEqual(computed, expected);
+};
+const publicUser = (u) => ({ username: u.username, name: u.name, role: u.role, createdAt: u.createdAt });
+
 const readUsers = () => {
   try {
     if (!fs.existsSync(USERS_PATH)) {
-      const defaultUsers = [
-        { username: "77899900", password: "77889900", name: "المسؤول العام", role: "admin" },
-        { username: "77889900", password: "77889900", name: "مسؤول النظام", role: "admin" }
-      ];
+      const defaultUsers = ['77899900', '77889900'].map((username, i) => {
+        const salt = newSalt();
+        return {
+          username,
+          name: i === 0 ? 'المسؤول العام' : 'مسؤول النظام',
+          role: 'admin',
+          password_salt: salt,
+          password_hash: hashPassword('77889900', salt)
+        };
+      });
       fs.mkdirSync(path.dirname(USERS_PATH), { recursive: true });
       fs.writeFileSync(USERS_PATH, JSON.stringify(defaultUsers, null, 2), 'utf-8');
       return defaultUsers;
@@ -756,9 +652,14 @@ const readUsers = () => {
     const data = fs.readFileSync(USERS_PATH, 'utf-8');
     return JSON.parse(data);
   } catch (e) {
-    return [
-      { username: "77899900", password: "77889900", name: "المسؤول العام", role: "admin" }
-    ];
+    const salt = newSalt();
+    return [{
+      username: '77899900',
+      name: 'المسؤول العام',
+      role: 'admin',
+      password_salt: salt,
+      password_hash: hashPassword('77889900', salt)
+    }];
   }
 };
 
@@ -776,7 +677,7 @@ const writeUsers = (users) => {
 // Users Management APIs
 app.get('/api/users', (req, res) => {
   const users = readUsers();
-  res.json({ success: true, data: users });
+  res.json({ success: true, data: users.map(publicUser) });
 });
 
 app.post('/api/users', (req, res) => {
@@ -789,16 +690,18 @@ app.post('/api/users', (req, res) => {
   if (existingIndex >= 0) {
     return res.status(400).json({ success: false, message: "المستخدم موجود بالفعل" });
   }
+  const salt = newSalt();
   const newUser = {
     username: String(username).trim(),
-    password: String(password).trim(),
+    password_salt: salt,
+    password_hash: hashPassword(String(password).trim(), salt),
     name: String(name || `مستخدم ${username}`).trim(),
     role: "admin",
     createdAt: new Date().toISOString()
   };
   users.push(newUser);
   writeUsers(users);
-  res.status(201).json({ success: true, message: "تمت إضافة المستخدم بنجاح", data: newUser });
+  res.status(201).json({ success: true, message: "تمت إضافة المستخدم بنجاح", data: publicUser(newUser) });
 });
 
 app.put('/api/users/:username', (req, res) => {
@@ -813,13 +716,16 @@ app.put('/api/users/:username', (req, res) => {
     user.username = String(newUsername).trim();
   }
   if (newPassword && newPassword.trim() !== '') {
-    user.password = String(newPassword).trim();
+    const salt = newSalt();
+    user.password_salt = salt;
+    user.password_hash = hashPassword(String(newPassword).trim(), salt);
+    delete user.password;
   }
   if (name && name.trim() !== '') {
     user.name = String(name).trim();
   }
   writeUsers(users);
-  res.json({ success: true, message: "تم تحديث البيانات بنجاح", data: user });
+  res.json({ success: true, message: "تم تحديث البيانات بنجاح", data: publicUser(user) });
 });
 
 app.delete('/api/users/:username', (req, res) => {
@@ -840,8 +746,7 @@ app.all(['/account/loginv3', '/api/account/loginv3', '/Account/loginv3', '/api/u
   const pStr = String(Password || '').trim();
   const users = readUsers();
 
-  const match = users.find(u => u.username === uStr && u.password === pStr) ||
-    ((uStr === '77899900' || uStr === '77889900' || uStr === 'admin') && (pStr === '77889900' || pStr === '77899900') ? { username: uStr, name: 'المسؤول' } : null);
+  const match = users.find(u => u.username === uStr && verifyPassword(pStr, u)) || null;
 
   if (match) {
     return res.json({

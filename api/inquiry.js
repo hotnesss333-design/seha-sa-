@@ -21,45 +21,7 @@ const readLeavesSync = () => {
   return [];
 };
 
-const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_manual_leaves_v5';
-
-const getLeaves = async () => {
-  // 1. Check Vercel KV / Upstash Redis
-  const kvUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (kvUrl && kvToken) {
-    try {
-      const resp = await fetch(`${kvUrl}/get/seha_sick_leaves_v5`, {
-        headers: { Authorization: `Bearer ${kvToken}` }
-      });
-      if (resp.ok) {
-        const json = await resp.json();
-        let val = json.result;
-        if (typeof val === 'string') {
-          try { val = JSON.parse(val); } catch (e) {}
-        }
-        if (Array.isArray(val)) return val;
-      }
-    } catch (err) {
-      console.warn('Vercel KV read error:', err);
-    }
-  }
-
-  // 2. Check Cloud DB (universal sync across all hosts)
-  try {
-    const cloudResp = await fetch(CLOUD_DB_URL, { cache: 'no-cache' });
-    if (cloudResp.ok) {
-      const cloudData = await cloudResp.json();
-      if (Array.isArray(cloudData)) {
-        return cloudData;
-      }
-    }
-  } catch (err) {}
-
-  // 3. Fallback to file system
-  return readLeavesSync();
-};
+const getLeaves = async () => readLeavesSync();
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
