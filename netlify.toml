@@ -3,6 +3,17 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# ---------- API routes ----------
+[[redirects]]
+  from = "/api/users/*"
+  to = "/.netlify/functions/users/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/users"
+  to = "/.netlify/functions/users"
+  status = 200
+
 [[redirects]]
   from = "/api/sick-leaves/inquiry*"
   to = "/.netlify/functions/inquiry"
@@ -28,14 +39,42 @@
   to = "/.netlify/functions/sick-leaves"
   status = 200
 
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
+# ---------- Security headers ----------
 [[headers]]
   for = "/*"
   [headers.values]
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://unpkg.com https://cdn.userway.org https://*.userway.org https://www.google.com https://www.gstatic.com https://maps.googleapis.com https://maps.gstatic.com https://www.googletagmanager.com https://api.elevenlabs.io; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.userway.org https://*.userway.org; font-src 'self' data: https://fonts.gstatic.com https://cdn.userway.org https://*.userway.org; img-src 'self' data: blob: https://cdn.userway.org https://*.userway.org https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com; connect-src 'self' https://cdn.userway.org https://*.userway.org https://api.elevenlabs.io https://*.elevenlabs.io https://maps.googleapis.com https://www.google.com https://www.gstatic.com https://fonts.googleapis.com https://*.gstatic.com; frame-src 'self' https://cdn.userway.org https://*.userway.org https://www.google.com https://www.gstatic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+
+# Long-lived caching for immutable hashed assets
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+# Never cache the HTML shell or the Google verification file
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

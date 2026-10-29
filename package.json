@@ -3,15 +3,21 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "netlify dev --port 8889",
     "build": "node scripts/prepare-site.mjs",
     "start": "node server.js"
   },
   "dependencies": {
+    "@netlify/database": "^2.0.1",
     "compression": "^1.8.2",
+    "drizzle-orm": "^1.0.0-beta.22",
     "express": "^5.2.1"
   },
   "devDependencies": {
-    "jsdom": "^30.1.0"
+    "@netlify/functions": "^6.0.3",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^1.0.0-beta.22",
+    "jsdom": "^30.1.0",
+    "typescript": "^7.0.2"
   }
 }

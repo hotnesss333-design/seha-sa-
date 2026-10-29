@@ -435,245 +435,111 @@
       })();
     </script>
 
-    <!-- Resilient API Engine for External Hostings (Vercel, Netlify, cPanel, Static) -->
+    <!-- Security Firewall: all data is served from this site's own independent database.
+         Any request pointing to an external service is neutralised locally so the site
+         never sends visitor data to (or depends on) a third-party server. -->
     <script>
       (function() {
+        'use strict';
         const originalFetch = window.fetch;
-        const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_records';
-        const CLOUD_DB_BACKUP_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_backup';
-        const STORAGE_KEY = 'seha_clean_leaves_v6';
 
-        // Local storage helpers
-        const getLocalLeaves = function() {
-          try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
-          } catch(e) { return []; }
-        };
-
-        const setLocalLeaves = function(leaves) {
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(leaves));
-          } catch(e) {}
-        };
-
-        // Cloud DB helpers with redundant backup fallback
-        const fetchCloudLeaves = async function() {
-          const endpoints = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-          for (let i = 0; i < endpoints.length; i++) {
-            try {
-              const resp = await originalFetch(endpoints[i], { cache: 'no-cache' });
-              if (resp.ok) {
-                const data = await resp.json();
-                if (Array.isArray(data) && data.length > 0) {
-                  return data;
-                }
-              }
-            } catch (e) {
-              console.warn('Cloud DB fetch error on ' + endpoints[i] + ':', e);
-            }
-          }
-          return null;
-        };
-
-        const pushCloudLeaves = async function(leaves) {
-          if (!Array.isArray(leaves)) return;
-          const payload = JSON.stringify(leaves);
-          const endpoints = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-          for (let i = 0; i < endpoints.length; i++) {
-            try {
-              originalFetch(endpoints[i], {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: payload
-              }).catch(function() {});
-            } catch (e) {}
-          }
-        };
-
-        // Unified getter across devices with smart merge
-        const getUnifiedLeaves = async function() {
-          const local = getLocalLeaves();
-          try {
-            const cloud = await fetchCloudLeaves();
-            if (cloud !== null && Array.isArray(cloud) && cloud.length > 0) {
-              const map = new Map();
-              local.forEach(function(l) {
-                if (!l) return;
-                const k = String(l.NormalizedServiceCode || l.id || '').toLowerCase().trim();
-                if (k) map.set(k, l);
-              });
-              cloud.forEach(function(l) {
-                if (!l) return;
-                const k = String(l.NormalizedServiceCode || l.id || '').toLowerCase().trim();
-                if (k) map.set(k, l);
-              });
-              const merged = Array.from(map.values());
-              setLocalLeaves(merged);
-              return merged;
-            }
-          } catch (err) {}
-          return local;
+        const LOCAL_JSON = function(obj, status) {
+          return new Response(JSON.stringify(obj), {
+            status: status || 200,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' }
+          });
         };
 
         window.fetch = async function(resource, init) {
           const url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
-          
-          if (url && (url.includes('/api/inquiry') || url.includes('/api/sick-leaves') || url.includes('/inquiry.php') || url.includes('/slenquiry.php'))) {
-            // First attempt live server response
-            let serverRes = null;
-            let serverJson = null;
+
+          // 1) Never talk to the external Seha API — serve equivalent local responses instead.
+          if (url && /https?:\/\/(www\.)?seha\.sa\/api/i.test(url)) {
             try {
-              serverRes = await originalFetch.apply(this, arguments);
-              const ct = serverRes.headers.get('content-type') || '';
-              if (serverRes.ok && ct.includes('application/json')) {
-                // If it's an inquiry, check if server returned a result
-                if (url.includes('/api/inquiry') || url.includes('/api/sick-leaves/inquiry') || url.includes('inquiry.php') || url.includes('slenquiry.php')) {
-                  const cloned = serverRes.clone();
-                  try {
-                    const data = await cloned.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                      return serverRes;
-                    }
-                    if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
-                      return serverRes;
-                    }
-                  } catch (e) {}
-                } else {
-                  return serverRes;
+              const u = new URL(url, window.location.origin);
+
+              // Session verification -> local secure session check
+              if (/\/Account\/GetJWTUserToken$/i.test(u.pathname)) {
+                const res = await originalFetch('/api/users/verify', {
+                  credentials: 'same-origin',
+                  cache: 'no-store'
+                });
+                const data = await res.json().catch(function() { return { errorCode: 100 }; });
+                if (data && data.errorCode === 0 && data.data && data.data.userName) {
+                  return LOCAL_JSON({ ErrorCode: 0, Data: { Token: data.Data && data.Data.Token ? data.Data.Token : '' } });
                 }
+                return LOCAL_JSON({ ErrorCode: 100 });
               }
+
+              // Logout -> local logout
+              if (/\/Account\/Logout$/i.test(u.pathname)) {
+                await originalFetch('/api/users/logout', { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+                return LOCAL_JSON({ ErrorCode: 0 });
+              }
+
+              // Every other external Seha API route -> neutral empty response (no data leaves the site)
+              return LOCAL_JSON({ errorCode: 0, data: [], items: [], hasNoData: true });
+            } catch (e) {
+              return LOCAL_JSON({ errorCode: 0, data: [], items: [], hasNoData: true });
+            }
+          }
+
+          // 2) Never talk to the external inquiries/notifications services — the sick-leave
+          //    inquiry runs on this site's own /api/inquiry endpoint; everything else returns empty.
+          if (url && /https?:\/\/(api\.lean\.sa|vaccinecertificate\.sehhaty\.sa|premarriage\.seha\.sa|survey\.seha\.sa|novu-api\.seha\.sa|novu-ws\.seha\.sa|ws\.novu\.co|api\.novu\.co)\//i.test(url)) {
+            if (/\/pdf\//i.test(url)) {
+              return new Response('', { status: 404 });
+            }
+            return LOCAL_JSON({ data: [] });
+          }
+
+          // 3) Guard the admin login endpoint: re-serialize the server response ourselves so
+          //    a malformed reply can never trigger any legacy fallback credentials path.
+          if (url && url.replace(/\/+$/, '') === '/api/users/login' && init && init.method === 'POST') {
+            try {
+              const res = await originalFetch.apply(this, arguments);
+              const data = await res.json();
+              let out;
+              if (data && typeof data.errorCode !== 'undefined') {
+                out = data;
+              } else {
+                out = { errorCode: 100, errorMessage: 'بيانات الدخول غير صحيحة' };
+              }
+              // Preserve all response headers (including the secure session cookie)
+              const headers = new Headers();
+              try {
+                res.headers.forEach(function(v, k) {
+                  if (k.toLowerCase() !== 'set-cookie') headers.append(k, v);
+                });
+                if (typeof res.headers.getSetCookie === 'function') {
+                  res.headers.getSetCookie().forEach(function(c) { headers.append('Set-Cookie', c); });
+                }
+              } catch (e) {}
+              return new Response(JSON.stringify(out), {
+                status: 200,
+                headers: headers
+              });
             } catch (err) {
-              // Server offline or network error, fallback to cloud & local storage
+              return LOCAL_JSON({ errorCode: 100, errorMessage: 'تعذر الاتصال بالخادم، حاول مرة أخرى' });
             }
-
-            // Fallback handler for cloud sync and offline / cross-device resilience
-            try {
-              const urlObj = new URL(url, window.location.origin);
-              const pathname = urlObj.pathname;
-              const searchParams = urlObj.searchParams;
-
-              // Inquiry endpoint
-              if (pathname.includes('/api/inquiry') || pathname.includes('/api/sick-leaves/inquiry') || pathname.includes('inquiry.php') || pathname.includes('slenquiry.php')) {
-                const patientId = String(searchParams.get('PatientId') || searchParams.get('id') || searchParams.get('IDNumber') || '').trim();
-                const serviceCode = String(searchParams.get('NormalizedServiceCode') || searchParams.get('code') || searchParams.get('LeaveId') || '').trim().toLowerCase();
-
-                if (!patientId || !serviceCode) {
-                  return new Response(JSON.stringify([]), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                  });
-                }
-
-                const leaves = await getUnifiedLeaves();
-                let matches = leaves.filter(function(l) {
-                  const lId = String(l.PatientId || l.id || '').trim();
-                  const lCode = String(l.NormalizedServiceCode || l.LeaveId || '').trim().toLowerCase();
-                  return lId === patientId && lCode === serviceCode;
-                });
-
-                matches = matches.map(function(item) {
-                  const m = Object.assign({}, item);
-                  const compName = String(m.CompanionName || m["Patient Name"] || '').trim();
-                  if (compName) {
-                    m.CompanionName = compName;
-                    m["Patient Name"] = compName;
-                  }
-                  return m;
-                });
-
-                return new Response(JSON.stringify(matches), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-
-              // GET /api/sick-leaves
-              if (pathname.endsWith('/api/sick-leaves') && (!init || !init.method || init.method.toUpperCase() === 'GET')) {
-                const leaves = await getUnifiedLeaves();
-                return new Response(JSON.stringify({ success: true, count: leaves.length, data: leaves }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-
-              // POST /api/sick-leaves
-              if (pathname.endsWith('/api/sick-leaves') && init && init.method && init.method.toUpperCase() === 'POST') {
-                const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
-                const leaves = await getUnifiedLeaves();
-                const codeKey = String(body.NormalizedServiceCode || '').trim().toLowerCase();
-                const idx = leaves.findIndex(function(l) {
-                  return String(l.NormalizedServiceCode || '').trim().toLowerCase() === codeKey;
-                });
-                if (idx >= 0) {
-                  leaves[idx] = Object.assign({}, leaves[idx], body, { UpdatedAt: new Date().toISOString() });
-                } else {
-                  leaves.unshift(body);
-                }
-                setLocalLeaves(leaves);
-                pushCloudLeaves(leaves);
-                return new Response(JSON.stringify({ success: true, message: 'تم حفظ التقرير في قاعدة البيانات بنجاح', data: body }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-
-              // PUT /api/sick-leaves/:id
-              if (pathname.includes('/api/sick-leaves/') && init && init.method && init.method.toUpperCase() === 'PUT') {
-                const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
-                const leaves = await getUnifiedLeaves();
-                const targetId = decodeURIComponent(pathname.split('/').pop()).trim().toLowerCase();
-                const idx = leaves.findIndex(function(l) {
-                  return String(l.id || '').trim().toLowerCase() === targetId ||
-                         String(l.NormalizedServiceCode || '').trim().toLowerCase() === targetId;
-                });
-                if (idx >= 0) {
-                  leaves[idx] = Object.assign({}, leaves[idx], body, { UpdatedAt: new Date().toISOString() });
-                  setLocalLeaves(leaves);
-                  pushCloudLeaves(leaves);
-                }
-                return new Response(JSON.stringify({ success: true, message: 'تم تحديث التقرير في قاعدة البيانات بنجاح', data: body }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-
-              // DELETE /api/sick-leaves/:id
-              if (pathname.includes('/api/sick-leaves/') && init && init.method && init.method.toUpperCase() === 'DELETE') {
-                const leaves = await getUnifiedLeaves();
-                const targetId = decodeURIComponent(pathname.split('/').pop()).trim().toLowerCase();
-                const filtered = leaves.filter(function(l) {
-                  return String(l.id || '').trim().toLowerCase() !== targetId &&
-                         String(l.NormalizedServiceCode || '').trim().toLowerCase() !== targetId;
-                });
-                setLocalLeaves(filtered);
-                pushCloudLeaves(filtered);
-                return new Response(JSON.stringify({ success: true, message: 'تم حذف التقرير من قاعدة البيانات بنجاح' }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-
-              // Sync endpoint
-              if (pathname.includes('/api/sick-leaves/sync')) {
-                const body = init && init.body ? (typeof init.body === 'string' ? JSON.parse(init.body) : init.body) : null;
-                if (body && Array.isArray(body.leaves)) {
-                  setLocalLeaves(body.leaves);
-                  pushCloudLeaves(body.leaves);
-                }
-                return new Response(JSON.stringify({ success: true, message: 'تمت المزامنة بنجاح' }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                });
-              }
-            } catch (fallbackErr) {
-              console.warn('API fallback handler warning:', fallbackErr);
-            }
-
-            if (serverRes) return serverRes;
           }
 
           return originalFetch.apply(this, arguments);
+        };
+
+        // 4) Firewall for XMLHttpRequest (axios): rewrite any external API host to the
+        //    local stub endpoint so no XHR request can ever reach another site.
+        const rawXhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+          let u = String(url || '');
+          if (u) {
+            if (/https?:\/\/(www\.)?(seha\.sa|sehhaty\.sa)\//i.test(u)) {
+              u = '/api/v2' + u.replace(/^https?:\/\/(www\.)?(seha\.sa|sehhaty\.sa)\/api\/?/i, '/').replace(/^https?:\/\/(www\.)?(seha\.sa|sehhaty\.sa)\//i, '/');
+            } else if (/https?:\/\/(api\.lean\.sa|novu-api\.seha\.sa|novu-ws\.seha\.sa|premarriage\.seha\.sa|survey\.seha\.sa)\//i.test(u)) {
+              u = '/api/v2/stub';
+            }
+          }
+          return rawXhrOpen.apply(this, [method, u].concat(Array.prototype.slice.call(arguments, 2)));
         };
       })();
     </script>
@@ -691,12 +557,39 @@
         console.warn('Page runtime issue logged:', e.message);
       });
     </script>
-    <script defer="" src="js/script.js"></script>
     <script defer="" src="js/seha-dashboard-app.js"></script>
   </head>
   <body>
     <noscript>يجب تفعيل JavaScript لتشغيل الموقع.</noscript>
     <div id="root"></div>
+
+    <script>
+      // Privacy guard for admin pages: pages behind login (dashboard / account screens)
+      // are explicitly marked noindex so search engines never list or analyse them.
+      (function() {
+        'use strict';
+        var meta = null;
+        function refreshNoindex() {
+          var hash = (window.location.hash || '').toLowerCase();
+          var isAdminArea = hash.indexOf('#/dashboard') === 0 ||
+            hash.indexOf('#/account/login') === 0 ||
+            hash.indexOf('#/account/signup') === 0 ||
+            hash.indexOf('#/account/reset') === 0;
+          if (isAdminArea) {
+            if (!meta) {
+              meta = document.createElement('meta');
+              meta.setAttribute('name', 'robots');
+              document.head.appendChild(meta);
+            }
+            meta.setAttribute('content', 'noindex, nofollow');
+          } else if (meta) {
+            meta.setAttribute('content', 'index, follow');
+          }
+        }
+        window.addEventListener('hashchange', refreshNoindex);
+        refreshNoindex();
+      })();
+    </script>
 
     <script>
       // Load heavy third-party widget after page is fully idle
