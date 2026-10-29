@@ -8,6 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@netlify/database": "^2.0.1",
     "compression": "^1.8.2",
     "express": "^5.2.1"
   },

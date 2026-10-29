@@ -1,14 +1,16 @@
 [
   {
     "username": "77899900",
-    "password": "77889900",
     "name": "المسؤول العام",
-    "role": "admin"
+    "role": "admin",
+    "password_salt": "f0a78c81873f8fda26bff30ced4dd4b0",
+    "password_hash": "14a98329bd1873aefdba3ce5b77e99c8d8b0f4ed353aa46e378a490ad64c3cb90a82e28bc6bbb5848d01dc7ae5faf6ed907bbc7cb154191a2a6fa0426852b2df"
   },
   {
     "username": "77889900",
-    "password": "77889900",
     "name": "مسؤول النظام",
-    "role": "admin"
+    "role": "admin",
+    "password_salt": "66e3fec258107811aca3d68fcbb57e12",
+    "password_hash": "6387e33d33ee2e1088e193734b07ce2d5ad94a765b1c722cbfe3568f29202cbca8b5b07adec6e5a2b312074dd3807f30eeba6ac3cb567eb26b05a3a38e769372"
   }
 ]

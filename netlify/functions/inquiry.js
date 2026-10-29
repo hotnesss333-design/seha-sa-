@@ -1,36 +1,49 @@
-const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_manual_leaves_v5';
+import {
+  jsonResponse, clientIp, cleanString, db, rateLimitDb,
+  isValidPatientId, isValidServiceCode, findLeaves
+} from './_lib/security.js';
 
+// Public inquiry endpoint: a patient checks their own sick-leave record.
 export default async function handler(request, context) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Content-Type': 'application/json; charset=utf-8'
-  };
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, { Allow: 'GET, POST' });
+  }
 
-  if (request.method === 'OPTIONS') {
-    return new Response('', { status: 200, headers });
+  const ip = clientIp(request, context);
+  let limit;
+  try {
+    limit = await rateLimitDb(db(), `inquiry:${ip}`, 30, 60);
+  } catch (e) {
+    limit = { allowed: true };
+  }
+  if (!limit.allowed) {
+    return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429, {
+      'Retry-After': String(limit.retryAfter)
+    });
   }
 
   const url = new URL(request.url);
-  const patientId = String(url.searchParams.get('PatientId') || url.searchParams.get('id') || url.searchParams.get('IDNumber') || '').trim();
-  const serviceCode = String(url.searchParams.get('NormalizedServiceCode') || url.searchParams.get('code') || url.searchParams.get('LeaveId') || '').trim().toLowerCase();
+  const patientId = cleanString(
+    url.searchParams.get('PatientId') || url.searchParams.get('id') || url.searchParams.get('IDNumber'),
+    32
+  );
+  const serviceCode = cleanString(
+    url.searchParams.get('NormalizedServiceCode') || url.searchParams.get('code') || url.searchParams.get('LeaveId'),
+    64
+  ).toLowerCase();
 
-  let leaves = [];
+  if (!patientId || !serviceCode) {
+    return jsonResponse([]);
+  }
+  if (!isValidPatientId(patientId) || !isValidServiceCode(serviceCode)) {
+    return jsonResponse([]);
+  }
+
   try {
-    const resp = await fetch(CLOUD_DB_URL, { cache: 'no-cache' });
-    if (resp.ok) {
-      leaves = await resp.json();
-    }
-  } catch (e) {}
-
-  const matches = (Array.isArray(leaves) ? leaves : []).filter(l => {
-    const lId = String(l.PatientId || l.id || '').trim();
-    const lCode = String(l.NormalizedServiceCode || l.LeaveId || '').trim().toLowerCase();
-    const idMatch = !patientId || lId === patientId;
-    const codeMatch = !serviceCode || lCode === serviceCode;
-    return idMatch && codeMatch;
-  });
-
-  return new Response(JSON.stringify(matches), { status: 200, headers });
+    const matches = await findLeaves(patientId, serviceCode);
+    return jsonResponse(matches);
+  } catch (err) {
+    console.error('inquiry failed:', err && err.message);
+    return jsonResponse({ error: 'Service temporarily unavailable' }, 503);
+  }
 }
