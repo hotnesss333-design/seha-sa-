@@ -29,3 +29,11 @@ test('browser attaches CSRF to mutations, rotates after login and keeps tokens o
     assert.equal(dom.window.localStorage.length,0); assert.equal(dom.window.document.cookie,'');
   } finally {dom.window.close();}
 });
+test('rejects external data connections before sending any request',async()=>{
+  const {dom,calls,state}=browser();
+  try {
+    await state.ready;
+    await assert.rejects(dom.window.fetch('https://outside.example.test/api/records'));
+    assert.equal(calls.length,1);
+  } finally {dom.window.close();}
+});

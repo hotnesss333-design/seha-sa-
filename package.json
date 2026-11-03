@@ -19,6 +19,7 @@
     "@types/node": "^26.6.6",
     "drizzle-kit": "^1.0.0-beta.22",
     "jsdom": "^30.1.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

@@ -14,7 +14,8 @@
   window.fetch = async function (resource, init = {}) {
     const request = new Request(resource, init);
     const url = new URL(request.url);
-    if (url.origin !== location.origin || !url.pathname.startsWith('/api/')) return nativeFetch(request);
+    if (url.origin !== location.origin) throw new Error('الاتصال بمواقع خارجية غير متاح');
+    if (!url.pathname.startsWith('/api/')) return nativeFetch(request);
     await state.ready;
     const headers = new Headers(request.headers);
     if (!['GET','HEAD'].includes(request.method)) {

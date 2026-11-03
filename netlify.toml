@@ -10,18 +10,6 @@
   force = true
 
 [[redirects]]
-  from = "/.netlify/functions/inquiry*"
-  to = "/security-unavailable.json"
-  status = 410
-  force = true
-
-[[redirects]]
-  from = "/.netlify/functions/sick-leaves*"
-  to = "/security-unavailable.json"
-  status = 410
-  force = true
-
-[[redirects]]
   from = "/*.php"
   to = "/security-unavailable.json"
   status = 410
@@ -53,7 +41,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
