@@ -1,0 +1,333 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "d20a5706-2731-4ec2-b9e3-f1f7450c049e",
+  "prevIds": [
+    "9bb76c32-1257-4790-b498-1719d9a47235"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "contact_messages",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "request_limits",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "health_records",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "app_sessions",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "contact_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "contact_messages"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "contact_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "request_limits"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "count",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "request_limits"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "request_limits"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lookup_hash",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "app_sessions"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "app_sessions"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "csrf_hash",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "app_sessions"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "app_sessions"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "contact_messages_pkey",
+      "schema": "public",
+      "table": "contact_messages",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "request_limits_pkey",
+      "schema": "public",
+      "table": "request_limits",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "health_records_pkey",
+      "schema": "public",
+      "table": "health_records",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "app_sessions_pkey",
+      "schema": "public",
+      "table": "app_sessions",
+      "entityType": "pks"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "lookup_hash"
+      ],
+      "nullsNotDistinct": false,
+      "name": "health_records_lookup_hash_key",
+      "schema": "public",
+      "table": "health_records",
+      "entityType": "uniques"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.role', true) = 'admin' OR (\"health_records\".\"owner_id\" = current_setting('app.user_id', true) AND current_setting('app.role', true) = 'doctor') OR \"health_records\".\"lookup_hash\" = current_setting('app.lookup_hash', true)",
+      "withCheck": null,
+      "name": "health_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "current_setting('app.role', true) IN ('admin', 'doctor') AND \"health_records\".\"owner_id\" = current_setting('app.user_id', true)",
+      "name": "health_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.role', true) = 'admin' OR (\"health_records\".\"owner_id\" = current_setting('app.user_id', true) AND current_setting('app.role', true) = 'doctor')",
+      "withCheck": "current_setting('app.role', true) = 'admin' OR (\"health_records\".\"owner_id\" = current_setting('app.user_id', true) AND current_setting('app.role', true) = 'doctor')",
+      "name": "health_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "health_records"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.role', true) = 'admin' OR (\"health_records\".\"owner_id\" = current_setting('app.user_id', true) AND current_setting('app.role', true) = 'doctor')",
+      "withCheck": null,
+      "name": "health_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "health_records"
+    }
+  ],
+  "renames": []
+}

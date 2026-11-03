@@ -13,6 +13,7 @@
   // Completely clean any old random/seeded keys so user starts with a 100% clean database
   try {
     [
+      'seha_clean_leaves_v6', 'seha_clean_companions_v6', 'seha_clean_deleted_leaves_v6', 'seha_logged_in', 'JWTUserToken', 'seha_username',
       'seha_manual_leaves_v5',
       'seha_user_deleted_leaves_v5',
       'seha_manual_leaves_v4',
@@ -68,54 +69,13 @@
     "ابنة الأخ": 18, "ابنة الاخ": 18, "بنت الاخ": 18
   };
 
-  // Local Storage Helpers for Permanent Retention
-  function getLocalLeaves() {
-    try {
-      const raw = localStorage.getItem(SEHA_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function setLocalLeaves(leaves) {
-    try {
-      localStorage.setItem(SEHA_STORAGE_KEY, JSON.stringify(leaves));
-      // Also maintain separate companions storage backup for redundancy
-      const companions = leaves.filter(l => l.isCompanion || l.type === 'companion' || l.CompanionName || l['Patient Name']);
-      localStorage.setItem(SEHA_COMPANIONS_STORAGE_KEY, JSON.stringify(companions));
-    } catch (e) {
-      console.warn("Error saving to local storage:", e);
-    }
-  }
-
-  function getDeletedCodes() {
-    try {
-      const raw = localStorage.getItem(SEHA_DELETED_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function addDeletedCode(codeOrId) {
-    try {
-      if (!codeOrId) return;
-      const list = getDeletedCodes();
-      const str = String(codeOrId).toLowerCase().trim();
-      if (!list.includes(str)) {
-        list.push(str);
-        localStorage.setItem(SEHA_DELETED_KEY, JSON.stringify(list));
-      }
-    } catch (e) {
-      console.warn("Error recording deleted code:", e);
-    }
-  }
-
+  function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+  function displayRecord(record) { return Object.fromEntries(Object.entries(record).map(([key,value]) => [key, typeof value === 'string' ? escapeHtml(value) : value])); }
+  function getDeletedCodes() { return []; }
   // Generate unique Leave Code: GSL + 12 digits
   function generateLeaveCode() {
-    const digits = Math.floor(100000000000 + Math.random() * 900000000000);
-    return `GSL${digits}`;
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    return 'GSL' + Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('').toUpperCase();
   }
 
   // Get Today formatted as YYYY-MM-DD
@@ -136,188 +96,33 @@
     return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1);
   }
 
-  // Check login state
-  function isLoggedIn() {
-    return localStorage.getItem('seha_logged_in') === 'true';
-  }
-
-  function setLoggedIn(val) {
-    if (val) {
-      localStorage.setItem('seha_logged_in', 'true');
-      localStorage.setItem('JWTUserToken', 'seha_token_77889900');
-      document.cookie = "JWTUserToken=seha_token_77889900;path=/;max-age=86400";
-    } else {
-      localStorage.removeItem('seha_logged_in');
-      localStorage.removeItem('JWTUserToken');
-      document.cookie = "JWTUserToken=;path=/;max-age=0";
-    }
-  }
-
-  const CLOUD_DB_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_records';
-  const CLOUD_DB_BACKUP_URL = 'https://kvdb.io/TcTZV6yBkGnPQyKKNLL4yQ/seha_master_db_backup';
-
-  async function pushToCloudEndpoints(leaves) {
-    if (!Array.isArray(leaves)) return;
-    const payload = JSON.stringify(leaves);
-    const urls = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-    for (const u of urls) {
-      try {
-        fetch(u, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload
-        }).catch(() => {});
-      } catch (e) {}
-    }
-  }
-
-  // Fetch leaves from central server database with cloud fallback
+  function isLoggedIn() { return !!window.SehaSecurity?.user && ['admin','doctor'].includes(window.SehaSecurity.user.role); }
+  async function setLoggedIn(value) { if (!value) { await window.SehaSecurity.logout(); leavesData = []; } }
   async function fetchLeaves() {
-    let loaded = false;
+    await window.SehaSecurity.ready;
+    if (!isLoggedIn()) { leavesData = []; return; }
     try {
-      const res = await fetch('/api/sick-leaves');
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json.data) && json.data.length > 0) {
-          leavesData = json.data;
-          setLocalLeaves(leavesData);
-          renderDashboard();
-          loaded = true;
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Error fetching leaves from server, falling back to cloud:', err);
-    }
-
-    // Direct cloud fetch fallback across networks/devices
-    if (!loaded) {
-      const endpoints = [CLOUD_DB_URL, CLOUD_DB_BACKUP_URL];
-      for (const u of endpoints) {
-        try {
-          const cRes = await fetch(u, { cache: 'no-cache' });
-          if (cRes.ok) {
-            const cData = await cRes.json();
-            if (Array.isArray(cData) && cData.length > 0) {
-              leavesData = cData;
-              setLocalLeaves(leavesData);
-              renderDashboard();
-              loaded = true;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (!loaded) {
-      leavesData = getLocalLeaves();
-      renderDashboard();
-    }
+      const res = await fetch('/api/sick-leaves'); const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      leavesData = json.data.map(displayRecord); renderDashboard();
+    } catch (error) { leavesData = []; showToast(error.message || 'تعذر تحميل السجلات'); }
   }
-
-  // Save or update leave or companion IMMEDIATELY from first click ("من أول مرة")
   async function saveLeave(leaveObj, isEdit) {
-    const codeKey = String(leaveObj.NormalizedServiceCode || '').toLowerCase().trim();
-    const idKey = String(leaveObj.id || '').toLowerCase().trim();
-    const isComp = !!(leaveObj.isCompanion || leaveObj.type === 'companion' || leaveObj.CompanionName || leaveObj['Patient Name']);
-
-    // 1. Remove from deleted codes if being re-added/edited
     try {
-      const delList = getDeletedCodes().filter(c => c !== codeKey && c !== idKey);
-      localStorage.setItem(SEHA_DELETED_KEY, JSON.stringify(delList));
-    } catch (e) {}
-
-    // 2. Update memory state immediately
-    const existingIdx = leavesData.findIndex(l => 
-      (codeKey && String(l.NormalizedServiceCode || '').toLowerCase().trim() === codeKey) ||
-      (idKey && String(l.id || '').toLowerCase().trim() === idKey)
-    );
-
-    if (existingIdx >= 0) {
-      leavesData[existingIdx] = { ...leavesData[existingIdx], ...leaveObj, UpdatedAt: new Date().toISOString() };
-    } else {
-      leavesData.unshift(leaveObj);
-    }
-
-    // 3. Save to local storage immediately
-    setLocalLeaves(leavesData);
-
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update active tab to match what was saved so user sees it right away
-    if (isComp) {
-      currentTab = 'companions';
-    } else {
-      currentTab = 'leaves';
-    }
-
-    // 6. Update UI & close modal immediately without delay
-    closeModal();
-    renderDashboard();
-    
-    if (isComp) {
-      showToast(isEdit ? 'تم تحديث بيانات مرافق المريض وحفظها في قاعدة البيانات' : 'تم حفظ مرافق المريض في قاعدة البيانات بنجاح');
-    } else {
-      showToast(isEdit ? 'تم تحديث الإجازة وحفظها في قاعدة البيانات' : 'تمت إضافة الإجازة وحفظها في قاعدة البيانات بنجاح');
-    }
-
-    // 7. Send to server with verified retry
-    try {
-      const url = isEdit 
-        ? `/api/sick-leaves/${encodeURIComponent(leaveObj.id || leaveObj.NormalizedServiceCode)}` 
-        : '/api/sick-leaves';
-      const method = isEdit ? 'PUT' : 'POST';
-      await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(leaveObj)
+      const res = await fetch(isEdit ? `/api/sick-leaves/${encodeURIComponent(leaveObj.id)}` : '/api/sick-leaves', {
+        method: isEdit ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(leaveObj)
       });
-    } catch (e) {
-      console.warn("Background server save warning:", e);
-    }
+      const json = await res.json(); if (!res.ok) throw new Error(json.message);
+      closeModal(); await fetchLeaves(); showToast('تم حفظ السجل بنجاح');
+    } catch (error) { showToast(error.message || 'تعذر حفظ السجل'); }
   }
-
-  // Delete leave or companion IMMEDIATELY from first click ("من أول مرة")
   async function deleteLeave(id) {
-    const targetKey = String(id || '').toLowerCase().trim();
-    const isComp = !!(leaveToDelete && (leaveToDelete.isCompanion || leaveToDelete.type === 'companion' || leaveToDelete.CompanionName || leaveToDelete['Patient Name']));
-
-    // 1. Track deleted code so it never comes back
-    addDeletedCode(targetKey);
-    if (leaveToDelete) {
-      if (leaveToDelete.NormalizedServiceCode) addDeletedCode(leaveToDelete.NormalizedServiceCode);
-      if (leaveToDelete.id) addDeletedCode(leaveToDelete.id);
-    }
-
-    // 2. Remove from memory state immediately
-    leavesData = leavesData.filter(l => 
-      String(l.id || '').toLowerCase().trim() !== targetKey &&
-      String(l.NormalizedServiceCode || '').toLowerCase().trim() !== targetKey
-    );
-
-    // 3. Save to local storage immediately
-    setLocalLeaves(leavesData);
-
-    // 4. Multi-region Cloud dual-write immediately
-    pushToCloudEndpoints(leavesData);
-
-    // 5. Update UI & close modal immediately
-    closeDeleteModal();
-    renderDashboard();
-    showToast(isComp ? 'تم حذف تقرير مرافق المريض من قاعدة البيانات بنجاح' : 'تم حذف التقرير من قاعدة البيانات بنجاح');
-
-    // 6. Send to server in background
     try {
-      await fetch(`/api/sick-leaves/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
-      });
-    } catch (e) {
-      console.warn("Background server delete warning:", e);
-    }
+      const res = await fetch(`/api/sick-leaves/${encodeURIComponent(id)}`, {method:'DELETE'});
+      const json = await res.json(); if (!res.ok) throw new Error(json.message);
+      closeDeleteModal(); await fetchLeaves(); showToast('تم حذف السجل بنجاح');
+    } catch (error) { showToast(error.message || 'تعذر حذف السجل'); }
   }
-
   // Toast notification
   function showToast(msg) {
     const existing = document.getElementById('seha-toast');
@@ -328,7 +133,7 @@
     toast.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        <span>${msg}</span>
+        <span>${escapeHtml(msg)}</span>
       </div>
     `;
     toast.style.cssText = `
@@ -830,7 +635,7 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             <span>إدارة الحسابات وكلمة المرور</span>
           </button>
-          <span class="seha-user-badge">المسؤول: ${localStorage.getItem('seha_username') || '77899900'}</span>
+          <span class="seha-user-badge">المسؤول: ${escapeHtml(window.SehaSecurity.user?.username || '')}</span>
           <button id="btn-seha-logout" class="seha-btn-logout">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             <span>تسجيل الخروج</span>
@@ -921,7 +726,7 @@
           <!-- Search Bar -->
           <div class="seha-search-bar">
             <svg class="seha-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input type="text" id="seha-search-input" class="seha-search-input" placeholder="${currentTab === 'companions' ? 'ابحث باسم المرافق، صلة القرابة، اسم المريض، أو رمز الخدمة...' : 'ابحث برقم الهوية، رمز الإجازة، أو اسم المريض...'}" value="${searchQuery}">
+            <input type="text" id="seha-search-input" class="seha-search-input" placeholder="${currentTab === 'companions' ? 'ابحث باسم المرافق، صلة القرابة، اسم المريض، أو رمز الخدمة...' : 'ابحث برقم الهوية، رمز الإجازة، أو اسم المريض...'}" value="${escapeHtml(searchQuery)}">
           </div>
 
           <!-- Table View -->
@@ -1060,9 +865,9 @@
     // Logout
     const logoutBtn = document.getElementById('btn-seha-logout');
     if (logoutBtn) {
-      logoutBtn.onclick = (e) => {
+      logoutBtn.onclick = async (e) => {
         if (e) e.preventDefault();
-        setLoggedIn(false);
+        try { await setLoggedIn(false); } catch { showToast("تعذر تسجيل الخروج؛ أعد المحاولة"); return; }
         const container = document.getElementById('seha-admin-dashboard-container');
         if (container) container.style.display = 'none';
         showToast('تم تسجيل الخروج بنجاح');
@@ -1711,289 +1516,11 @@
   let isUsersModalOpen = false;
 
   async function openUsersModal() {
-    isUsersModalOpen = true;
-    let modalEl = document.getElementById("seha-users-modal");
-    if (!modalEl) {
-      modalEl = document.createElement("div");
-      modalEl.id = "seha-users-modal";
-      document.body.appendChild(modalEl);
-    }
-    modalEl.style.display = "flex";
-
-    // Load users from server
-    let usersList = [];
-    try {
-      const res = await fetch("/api/users");
-      if (res.ok) {
-        const d = await res.json();
-        usersList = d.data || [];
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
-    const currentUsername = localStorage.getItem("seha_username") || "77899900";
-
-    modalEl.innerHTML = `
-      <style>
-        #seha-users-modal {
-          position: fixed;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(4px);
-          z-index: 100002;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 16px;
-          direction: rtl;
-          font-family: "Cairo", sans-serif !important;
-        }
-        .seha-users-card {
-          background: #ffffff;
-          border-radius: 16px;
-          max-width: 620px;
-          width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-          display: flex;
-          flex-direction: column;
-        }
-        .seha-users-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 18px 24px;
-          border-bottom: 1px solid #e2e8f0;
-          background: #f8fafc;
-          border-radius: 16px 16px 0 0;
-        }
-        .seha-users-title {
-          font-size: 17px;
-          font-weight: 800;
-          color: #0f172a;
-          display: flex;
-          align-items: center;
-          gap: 9px;
-        }
-        .seha-users-body {
-          padding: 24px;
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-        .seha-section-box {
-          border: 1px solid #e2e8f0;
-          border-radius: 12px;
-          padding: 18px;
-          background: #fafbfd;
-        }
-        .seha-section-title {
-          font-size: 14.5px;
-          font-weight: 800;
-          color: #1e3a8a;
-          margin-bottom: 14px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .seha-user-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 14px;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          margin-bottom: 8px;
-          font-size: 13.5px;
-        }
-      </style>
-
-      <div class="seha-users-card">
-        <div class="seha-users-header">
-          <div class="seha-users-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#306DB5" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-            <span>إدارة الحسابات وكلمة المرور</span>
-          </div>
-          <button id="btn-close-users-modal" class="seha-btn-cancel" style="padding:6px 12px;font-size:12px;">إغلاق ✕</button>
-        </div>
-
-        <div class="seha-users-body">
-          <!-- Section 1: Change Current User Credentials -->
-          <div class="seha-section-box">
-            <div class="seha-section-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-              <span>تغيير رقم الهوية / كلمة المرور للحساب الحالي (${currentUsername})</span>
-            </div>
-            <form id="form-update-current-user">
-              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:12px;">
-                <div class="seha-field-group">
-                  <label class="seha-field-label">رقم الهوية الجديد (أو إبقاء الحالي)</label>
-                  <input type="text" id="inp-cur-new-username" class="seha-input" value="${currentUsername}" required>
-                </div>
-                <div class="seha-field-group">
-                  <label class="seha-field-label">كلمة المرور الجديدة</label>
-                  <input type="text" id="inp-cur-new-password" class="seha-input" placeholder="أدخل كلمة المرور الجديدة" required>
-                </div>
-              </div>
-              <button type="submit" class="seha-btn-submit" style="font-size:13px;padding:9px 18px;">
-                <span>حفظ بيانات الحساب</span>
-              </button>
-            </form>
-          </div>
-
-          <!-- Section 2: Add New User -->
-          <div class="seha-section-box">
-            <div class="seha-section-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-              <span>إضافة مستخدم جديد للنظام بكلمة مرور خاصة</span>
-            </div>
-            <form id="form-add-new-user">
-              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:12px;">
-                <div class="seha-field-group">
-                  <label class="seha-field-label">رقم الهوية / اسم المستخدم</label>
-                  <input type="text" id="inp-new-user-id" class="seha-input" placeholder="مثال: 1020304050" required>
-                </div>
-                <div class="seha-field-group">
-                  <label class="seha-field-label">اسم المسؤول / الموظف</label>
-                  <input type="text" id="inp-new-user-name" class="seha-input" placeholder="مثال: د. أحمد المطيري" required>
-                </div>
-                <div class="seha-field-group">
-                  <label class="seha-field-label">كلمة المرور</label>
-                  <input type="text" id="inp-new-user-password" class="seha-input" placeholder="كلمة المرور للدخول" required>
-                </div>
-              </div>
-              <button type="submit" class="seha-btn-submit" style="background:#0284c7;font-size:13px;padding:9px 18px;">
-                <span>+ إضافة المستخدم المصرح له</span>
-              </button>
-            </form>
-          </div>
-
-          <!-- Section 3: Existing Users List -->
-          <div class="seha-section-box">
-            <div class="seha-section-title" style="color:#334155;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-              <span>المستخدمون المصرح لهم بتسجيل الدخول (${usersList.length})</span>
-            </div>
-            <div>
-              ${usersList.map(u => `
-                <div class="seha-user-row">
-                  <div>
-                    <strong style="color:#0f172a;">${u.name || "مسؤول"}</strong>
-                    <span style="color:#64748b;margin:0 8px;">|</span>
-                    <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#1e40af;">رقم الهوية: ${u.username}</code>
-                    <span style="color:#64748b;margin:0 8px;">|</span>
-                    <span style="color:#475569;font-size:12px;">كلمة المرور: ••••••••</span>
-                  </div>
-                  <div>
-                    ${usersList.length > 1 ? `
-                      <button class="seha-action-btn seha-action-btn-del btn-delete-user" data-username="${u.username}" style="padding:4px 10px;font-size:12px;">
-                        حذف
-                      </button>
-                    ` : `<span style="font-size:11px;color:#94a3b8;">المسؤول الرئيسي</span>`}
-                  </div>
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Close button
-    document.getElementById("btn-close-users-modal").onclick = closeUsersModal;
-
-    // Update current user
-    document.getElementById("form-update-current-user").onsubmit = async (e) => {
-      e.preventDefault();
-      const newU = document.getElementById("inp-cur-new-username").value.trim();
-      const newP = document.getElementById("inp-cur-new-password").value.trim();
-      if (!newU || !newP) return;
-
-      try {
-        const res = await fetch(`/api/users/${encodeURIComponent(currentUsername)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ newUsername: newU, newPassword: newP })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          localStorage.setItem("seha_username", newU);
-          showToast("تم تحديث بيانات الحساب بنجاح");
-          openUsersModal();
-          renderDashboard();
-        } else {
-          alert(data.message || "فشل التحديث");
-        }
-      } catch (err) {
-        alert("خطأ في الاتصال");
-      }
-    };
-
-    // Add new user
-    document.getElementById("form-add-new-user").onsubmit = async (e) => {
-      e.preventDefault();
-      const uId = document.getElementById("inp-new-user-id").value.trim();
-      const uName = document.getElementById("inp-new-user-name").value.trim();
-      const uPass = document.getElementById("inp-new-user-password").value.trim();
-      if (!uId || !uPass) return;
-
-      try {
-        const res = await fetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: uId, name: uName, password: uPass })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast("تمت إضافة المستخدم الجديد بنجاح");
-          openUsersModal();
-        } else {
-          alert(data.message || "فشل إضافة المستخدم");
-        }
-      } catch (err) {
-        alert("خطأ في الاتصال");
-      }
-    };
-
-    // Delete user buttons
-    document.querySelectorAll(".btn-delete-user").forEach(btn => {
-      btn.onclick = async () => {
-        const un = btn.getAttribute("data-username");
-        if (!confirm(`هل أنت متأكد من حذف المستخدم ${un}؟`)) return;
-        try {
-          const res = await fetch(`/api/users/${encodeURIComponent(un)}`, { method: "DELETE" });
-          if (res.ok) {
-            showToast("تم حذف المستخدم");
-            openUsersModal();
-          } else {
-            const data = await res.json();
-            alert(data.message || "فشل حذف المستخدم");
-          }
-        } catch (e) {
-          alert("خطأ في الاتصال");
-        }
-      };
-    });
+    showToast('إدارة الحسابات والدعوات والصلاحيات وتغيير كلمات المرور متاحة عبر Netlify Identity للمشرف المخوّل.');
   }
-
-  function closeUsersModal() {
-    isUsersModalOpen = false;
-    const modalEl = document.getElementById("seha-users-modal");
-    if (modalEl) modalEl.style.display = "none";
-  }
-
-  function closeDeleteModal() {
-    isDeleteModalOpen = false;
-    leaveToDelete = null;
-    const delEl = document.getElementById('seha-delete-modal');
-    if (delEl) delEl.style.display = 'none';
-  }
-
   // Intercept Hash changes to detect #/Dashboard or #/account/login
-  function handleLocationChange() {
+  async function handleLocationChange() {
+    await window.SehaSecurity.ready;
     const hash = window.location.hash || '';
     if (hash === '#/slenquiry' || hash === '#/inquiry') {
       window.location.hash = '#/inquiries/slenquiry';

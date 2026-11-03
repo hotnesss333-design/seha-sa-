@@ -4,29 +4,34 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/api/sick-leaves/inquiry*"
-  to = "/.netlify/functions/inquiry"
-  status = 200
+  from = "http://brilliant-kangaroo-9c201f.netlify.app/*"
+  to = "https://brilliant-kangaroo-9c201f.netlify.app/:splat"
+  status = 301
+  force = true
 
 [[redirects]]
-  from = "/api/inquiry*"
-  to = "/.netlify/functions/inquiry"
-  status = 200
+  from = "/*.php"
+  to = "/security-unavailable.json"
+  status = 410
+  force = true
 
 [[redirects]]
-  from = "/api/sick-leaves/sync*"
-  to = "/.netlify/functions/sick-leaves"
-  status = 200
+  from = "/data/*"
+  to = "/security-unavailable.json"
+  status = 404
+  force = true
 
 [[redirects]]
-  from = "/api/sick-leaves/*"
-  to = "/.netlify/functions/sick-leaves/:splat"
-  status = 200
+  from = "/*.zip"
+  to = "/security-unavailable.json"
+  status = 404
+  force = true
 
 [[redirects]]
-  from = "/api/sick-leaves*"
-  to = "/.netlify/functions/sick-leaves"
-  status = 200
+  from = "/download*"
+  to = "/security-unavailable.json"
+  status = 410
+  force = true
 
 [[redirects]]
   from = "/*"
@@ -36,6 +41,19 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store, private"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
